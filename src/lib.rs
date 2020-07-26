@@ -1,6 +1,7 @@
 pub mod regex;
 pub mod matcher;
 pub mod repeat;
+pub mod string_pointer;
 
 #[cfg(test)]
 mod tests {
