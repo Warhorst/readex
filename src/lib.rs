@@ -2,6 +2,7 @@ pub mod regex;
 pub mod matcher;
 pub mod repeat;
 pub mod string_pointer;
+pub mod expression;
 
 #[cfg(test)]
 mod tests {

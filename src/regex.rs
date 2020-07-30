@@ -1,3 +1,4 @@
+use crate::expression::Expression;
 use crate::matcher::Matcher;
 use crate::repeat::Repeat;
 
@@ -19,4 +20,10 @@ impl<'a> Regex<'a> {
     pub fn matches_string(&self, string: &str) -> bool {
         false
     }
+}
+
+enum RegexType<'a> {
+    Match(Box<dyn Matcher + 'a>),
+    Repeat(Regex<'a>, Box<dyn Repeat + 'a>),
+    Expression(Expression<'a>),
 }
