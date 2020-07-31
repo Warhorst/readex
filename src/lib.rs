@@ -2,7 +2,6 @@ pub mod regex;
 pub mod matcher;
 pub mod repeat;
 pub mod string_pointer;
-pub mod expression;
 
 #[cfg(test)]
 mod tests {
@@ -11,8 +10,8 @@ mod tests {
 
     #[test]
     fn it_works() {
-        let regex = Regex::for_matcher(StupidMatcher);
-        let matches = regex.matches_string("foo");
+        let regex = Regex::matcher(StupidMatcher);
+        let matches = regex.matches("foo");
         assert!(matches)
     }
 }
