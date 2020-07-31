@@ -6,6 +6,7 @@ use crate::regex::or::Or;
 use crate::regex::regex_type::RegexType;
 use crate::regex::repeater::Repeater;
 use crate::repeat::Repeat;
+use crate::string_pointer::StringPointer;
 
 mod regex_type;
 mod matcher;
@@ -55,7 +56,55 @@ impl<'a> Regex<'a> {
         }
     }
 
+    /// This method is used to chain multiple regexes together.
+    /// The given next regex is always appended to the last
+    /// element in the chain.
+    ///
+    /// Examples:
+    /// ```
+    /// use crate::readex::regex::Regex;
+    /// use crate::readex::matcher::string::Str;
+    /// use crate::readex::matcher::any::Any;
+    ///
+    /// let regex_one = Regex::matcher(Str::new("foo"))
+    ///     .followed_by(Regex::matcher(Any))
+    ///     .followed_by(Regex::matcher(Str::new("bar")))
+    ///     .followed_by(Regex::matcher(Any))
+    ///     .followed_by(Regex::matcher(Str::new("baz")));
+    ///
+    /// let regex_two = Regex::matcher(Str::new("foo"))
+    ///     .followed_by(Regex::matcher(Any)
+    ///         .followed_by(Regex::matcher(Str::new("bar"))
+    ///             .followed_by(Regex::matcher(Any)
+    ///                 .followed_by(Regex::matcher(Str::new("baz"))))));
+    ///
+    /// assert!(regex_one.matches("foo bar baz"));
+    /// assert!(regex_two.matches("foo bar baz"));
+    /// ```
+    pub fn followed_by(mut self, next: Regex<'a>) -> Self {
+        match self.next {
+            Some(next_regex) => Regex {
+                regex_type: self.regex_type,
+                next: Some(Box::new(next_regex.followed_by(next))),
+            },
+            None => {
+                self.next = Some(Box::new(next));
+                self
+            }
+        }
+    }
+
     pub fn matches(&self, string: &str) -> bool {
-        self.regex_type.matches_string(string)
+        let mut string_pointer = StringPointer::from(string);
+        self.matches_string(&mut string_pointer)
+    }
+
+    fn matches_string(&self, string_pointer: &mut StringPointer) -> bool {
+        let matches = self.regex_type.matches_string(string_pointer);
+        match (matches, &self.next) {
+            (true, Some(next_regex)) => next_regex.matches_string(string_pointer),
+            (true, None) => true,
+            _ => false
+        }
     }
 }

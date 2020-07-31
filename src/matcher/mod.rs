@@ -1,15 +1,10 @@
 use crate::string_pointer::StringPointer;
 
+pub mod string;
+pub mod any;
+
 pub trait Matcher {
-    fn matches(&self, string_pointer: StringPointer) -> bool;
-}
+    fn matches(&self, string: String) -> bool;
 
-pub struct StupidMatcher;
-
-pub mod string_matcher;
-
-impl Matcher for StupidMatcher {
-    fn matches(&self, _string_pointer: StringPointer) -> bool {
-        false
-    }
+    fn checked_string_length(&self) -> usize;
 }

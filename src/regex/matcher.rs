@@ -1,20 +1,25 @@
 use crate::matcher::Matcher;
 use crate::regex::regex_type::RegexType;
+use crate::string_pointer::StringPointer;
 
-pub struct Match<'a> {
-    matcher: Box<dyn Matcher + 'a>
+pub struct Match<M: Matcher> {
+    matcher: M
 }
 
-impl<'a> RegexType for Match<'a> {
-    fn matches_string(&self, string: &str) -> bool {
-        false
+impl<M: Matcher> RegexType for Match<M> {
+    fn matches_string(&self, string_pointer: &mut StringPointer) -> bool {
+        let checked_string_length = self.matcher.checked_string_length();
+        match string_pointer.take_next(checked_string_length) {
+            Ok(string) => self.matcher.matches(string),
+            Err(_) => false
+        }
     }
 }
 
-impl<'a> Match<'a> {
-    pub fn new(matcher: impl Matcher + 'a) -> Self {
+impl<M: Matcher> Match<M> {
+    pub fn new(matcher: M) -> Self {
         Match {
-            matcher: Box::new(matcher)
+            matcher
         }
     }
 }

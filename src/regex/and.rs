@@ -1,5 +1,6 @@
 use crate::regex::Regex;
 use crate::regex::regex_type::RegexType;
+use crate::string_pointer::StringPointer;
 
 pub struct And<'a> {
     left: Regex<'a>,
@@ -7,7 +8,7 @@ pub struct And<'a> {
 }
 
 impl<'a> RegexType for And<'a> {
-    fn matches_string(&self, string: &str) -> bool {
+    fn matches_string(&self, string_pointer: &mut StringPointer) -> bool {
         false
     }
 }
