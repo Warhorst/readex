@@ -1,43 +1,53 @@
 use std::fmt::Formatter;
 
-pub type Result = std::result::Result<String, StringPointerError>;
+use crate::string_pointer::StringPointerError::NoCheckpointToReturn;
 
-pub struct StringPointer {
-    index: usize,
-    string: String,
-    history: Vec<usize>,
-}
+pub type Result<T> = std::result::Result<T, StringPointerError>;
 
 /// A string with a pointer to its current position and a history.
 /// It allows to take slices from the string, beginning at its current position.
-/// The history enables an easy reset to a former location.
+/// The check points enable an easy reset to a former location.
+pub struct StringPointer {
+    index: usize,
+    string: String,
+    check_points: Vec<usize>,
+}
+
 impl StringPointer {
     pub fn from(string: &str) -> Self {
         StringPointer {
             index: 0,
             string: String::from(string),
-            history: vec![0],
+            check_points: vec![],
         }
     }
 
     /// Take the next <amount> chars from the string and give them back.
-    /// The index is adapted and a new history entry is created.
-    pub fn take_next(&mut self, amount: usize) -> Result {
+    /// The index is adapted.
+    pub fn take_next(&mut self, amount: usize) -> Result<String> {
         if self.max_index() < self.index + amount {
             return Err(StringPointerError::SizeExceeded)
         }
-
         let result = String::from(&self.string[self.index..(amount + self.index)]);
         self.index += amount;
-        self.history.push(self.index);
         Ok(result)
     }
 
-    /// Resets the pointer to its former position and removes the last history entry.
-    pub fn set_back(&mut self) {
-        if self.history.len() > 1 {
-            self.history.pop().unwrap();
-            self.index = *self.history.last().unwrap()
+    /// Sets the current index as a checkpoint.
+    pub fn set_checkpoint(&mut self) {
+        if !self.check_points.contains(&self.index) {
+            self.check_points.push(self.index)
+        }
+    }
+
+    /// Resets the pointer to its former checkpoint, removing it in the process.
+    pub fn return_to_checkpoint(&mut self) -> Result<()> {
+        if self.check_points.len() >= 1 {
+            let new_index = self.check_points.pop().unwrap();
+            self.index = new_index;
+            Ok(())
+        } else {
+            Err(NoCheckpointToReturn)
         }
     }
 
@@ -53,7 +63,8 @@ impl StringPointer {
 
 #[derive(Debug, PartialEq)]
 pub enum StringPointerError {
-    SizeExceeded
+    SizeExceeded,
+    NoCheckpointToReturn,
 }
 
 impl std::error::Error for StringPointerError {}
@@ -61,7 +72,8 @@ impl std::error::Error for StringPointerError {}
 impl std::fmt::Display for StringPointerError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::SizeExceeded => write!(f, "Size of StringPointer exceeded with given next amount!")
+            Self::SizeExceeded => write!(f, "Size of StringPointer exceeded with given next amount!"),
+            Self::NoCheckpointToReturn => writeln!(f, "There is no checkpoint set to return to!")
         }
     }
 }
@@ -69,6 +81,7 @@ impl std::fmt::Display for StringPointerError {
 #[cfg(test)]
 mod tests {
     use crate::string_pointer::{StringPointer, StringPointerError};
+    use crate::string_pointer::StringPointerError::{NoCheckpointToReturn, SizeExceeded};
 
     #[test]
     pub fn success_take_next() {
@@ -81,25 +94,54 @@ mod tests {
         assert_eq!("foo".to_string(), foo);
         assert_eq!("bar".to_string(), bar);
         assert_eq!("baz".to_string(), baz);
-        assert_eq!(vec![0, 3, 6, 9], string_pointer.history);
         assert_eq!(9, string_pointer.index)
     }
 
     #[test]
-    pub fn success_set_back() {
-        let mut string_pointer = StringPointer::from("foobarbaz");
+    pub fn success_set_checkpoint() {
+        let mut string_pointer = StringPointer::from("foo");
+
+        let empty_vec: Vec<usize> = vec![];
+        assert_eq!(empty_vec, string_pointer.check_points);
+
+        string_pointer.set_checkpoint();
+        assert_eq!(vec![0], string_pointer.check_points)
+    }
+
+    #[test]
+    pub fn success_checkpoint_not_set_twice() {
+        let mut string_pointer = StringPointer::from("foo");
+
+        string_pointer.set_checkpoint();
+        string_pointer.set_checkpoint();
+
+        assert_eq!(vec![0], string_pointer.check_points);
+    }
+
+    #[test]
+    pub fn success_return_to_checkpoint() {
+        let mut string_pointer = StringPointer::from("foobar");
+
         let foo = string_pointer.take_next(3).unwrap();
+        string_pointer.set_checkpoint();
         let bar = string_pointer.take_next(3).unwrap();
-        assert_eq!(vec![0, 3, 6], string_pointer.history);
+        assert_eq!(vec![3], string_pointer.check_points);
         assert_eq!(6, string_pointer.index);
 
-        string_pointer.set_back();
-        assert_eq!(vec![0, 3], string_pointer.history);
-        assert_eq!(3, string_pointer.index);
+        let result = string_pointer.return_to_checkpoint();
+        let empty_vec: Vec<usize> = vec![];
+        assert_eq!(result, Ok(()));
+        assert_eq!(empty_vec, string_pointer.check_points);
+        assert_eq!(3, string_pointer.index)
+    }
 
-        string_pointer.set_back();
-        assert_eq!(vec![0], string_pointer.history);
-        assert_eq!(0, string_pointer.index)
+    #[test]
+    pub fn failure_return_to_checkpoint() {
+        let mut string_pointer = StringPointer::from("foo");
+
+        let result = string_pointer.return_to_checkpoint();
+
+        assert_eq!(Err(NoCheckpointToReturn), result)
     }
 
     #[test]
@@ -119,9 +161,6 @@ mod tests {
 
         let result = string_pointer.take_next(string.len() + 1);
 
-        match result {
-            Err(error) => assert_eq!(StringPointerError::SizeExceeded, error),
-            _ => panic!("Result not as expected!")
-        }
+        assert_eq!(Err(SizeExceeded), result)
     }
 }
