@@ -135,7 +135,10 @@ impl<'a> Regex<'a> {
                     Ok(false) => string_pointer.return_to_checkpoint().unwrap(),
                     Err(error) => return Err(error),
                 },
-                Ok(false) => string_pointer.return_to_checkpoint().unwrap(),
+                Ok(false) => {
+                    string_pointer.return_to_checkpoint().unwrap();
+                    return Ok(false);
+                }
                 Err(error) => return Err(error),
             }
         }

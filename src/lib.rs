@@ -38,7 +38,7 @@ mod tests {
 
         // assert!(regex_one.matches("foo bar baz"));
         // assert!(regex_two.matches("foo bar baz"));
-        assert!(regex_three.matches("fooAAnAAbar"));
+        assert!(regex_three.matches("fooAAAAbar"));
         // assert!(regex_four.matches("AAAnAA"))
     }
 }
