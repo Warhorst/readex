@@ -1,3 +1,6 @@
+use std::fmt::{Display, Formatter};
+use std::ops::Range;
+
 use crate::matcher::Matcher;
 use crate::regex::and::And;
 use crate::regex::matcher::Match;
@@ -5,7 +8,7 @@ use crate::regex::not::Not;
 use crate::regex::or::Or;
 use crate::regex::regex_type::RegexType;
 use crate::repeat::Repeat;
-use crate::string_pointer::StringPointer;
+use crate::string_pointer::{StringPointer, StringPointerError};
 
 mod regex_type;
 mod matcher;
@@ -90,81 +93,116 @@ impl<'a> Regex<'a> {
 
     pub fn matches(&self, string: &str) -> bool {
         let mut string_pointer = StringPointer::from(string);
-        self.matches_string(&mut string_pointer)
-    }
+        let match_result = self.matches_string(&mut string_pointer);
 
-    fn matches_string(&self, string_pointer: &mut StringPointer) -> bool {
-        match &self.repeat {
-            Some(repeat) => {
-                self.matches_string_with_repeat(string_pointer, repeat.get_minimum(), repeat.get_maximum())
-            },
-            None => self.matches_string_without_repeat(string_pointer)
-        }
-    }
-
-    fn matches_string_without_repeat(&self, string_pointer: &mut StringPointer) -> bool {
-        let matches = self.regex_type.matches_string(string_pointer);
-        match (matches, &self.next) {
-            (true, Some(next_regex)) => next_regex.matches_string(string_pointer),
-            (true, None) => true,
-            _ => false
-        }
-    }
-
-    fn matches_string_with_repeat(&self, string_pointer: &mut StringPointer, min_repeat: Option<usize>, max_repeat: Option<usize>) -> bool {
-        let min = match min_repeat {
-            Some(min) => min,
-            None => 0
+        if let Err(StringPointerError::SizeExceeded) = match_result {
+            return false;
         };
 
-        let minimum_matches = self.matches_minimum_repeats(string_pointer, min);
-        if !minimum_matches { return false }
+        match_result.unwrap()
+    }
+
+    fn matches_string(&self, string_pointer: &mut StringPointer) -> Result<bool, StringPointerError> {
+        match &self.repeat {
+            None => self.matches_string_without_repeat(string_pointer),
+            Some(repeat) => self.matches_string_with_repeat(string_pointer, repeat.get_minimum().unwrap_or(0), repeat.get_maximum())
+        }
+    }
+
+    fn matches_string_without_repeat(&self, string_pointer: &mut StringPointer) -> Result<bool, StringPointerError> {
+        let regex_matches_result = self.own_regex_matches(string_pointer);
+        if let Ok(true) = regex_matches_result {
+            return self.next_regex_matches(string_pointer);
+        }
+        regex_matches_result
+    }
+
+    fn matches_string_with_repeat(&self, string_pointer: &mut StringPointer, min_repeat: usize, max_repeat: Option<usize>) -> Result<bool, StringPointerError> {
+        match self.minimum_repeat_matches(string_pointer, min_repeat) {
+            Ok(true) => return Ok(true),
+            Err(error) => return Err(error),
+            _ => ()
+        }
+
+        let mut counter = min_repeat;
+        while !self.counter_at_max(counter, &max_repeat) {
+            let own_regex_matches = self.own_regex_matches(string_pointer);
+            string_pointer.set_checkpoint();
+
+            match own_regex_matches {
+                Ok(true) => match self.next_regex_matches(string_pointer) {
+                    Ok(true) => return Ok(true),
+                    Ok(false) => string_pointer.return_to_checkpoint().unwrap(),
+                    Err(error) => return Err(error),
+                },
+                Ok(false) => string_pointer.return_to_checkpoint().unwrap(),
+                Err(error) => return Err(error),
+            }
+        }
+
+        Ok(false)
+    }
+
+    /// Returns if this Regex matches the given StringPointer a minimum amount of times, defined
+    /// by the set Repeat. Afterwards, the following regexes must match the remaining
+    /// string. If this is not true, the StringPointer is reset to its index that was reached after
+    /// the repeats.
+    fn minimum_repeat_matches(&self, string_pointer: &mut StringPointer, min: usize) -> Result<bool, StringPointerError> {
+        for _ in 0..min {
+            match self.own_regex_matches(string_pointer) {
+                Ok(false) => return Ok(false),
+                Err(error) => return Err(error),
+                _ => ()
+            }
+        }
+
         string_pointer.set_checkpoint();
 
-        let remaining_matches = match &self.next {
-            Some(next_regex) => next_regex.matches_string(string_pointer),
-            None => true
-        };
-
-        if !remaining_matches {
-            string_pointer.return_to_checkpoint().unwrap()
-        }
-
-        let mut counter = min;
-
-        while !Self::counter_at_max(counter, &max_repeat) {
-            let matches = self.regex_type.matches_string(string_pointer);
-            string_pointer.set_checkpoint();
-            let remain_matches = match (matches, &self.next) {
-                (true, Some(next_regex)) => next_regex.matches_string(string_pointer),
-                (true, None) => true,
-                _ => false
-            };
-
-            if remain_matches {
-                return true
-            } else {
-                string_pointer.return_to_checkpoint().unwrap()
+        match self.next_regex_matches(string_pointer) {
+            Ok(true) => Ok(true),
+            Err(error) => Err(error),
+            _ => {
+                string_pointer.return_to_checkpoint().unwrap();
+                Ok(false)
             }
         }
-
-        false
     }
 
-    fn matches_minimum_repeats(&self, string_pointer: &mut StringPointer, min: usize) -> bool {
-        for _ in 0..min {
-            if !self.regex_type.matches_string(string_pointer) {
-                return false
-            }
-        }
-
-        true
-    }
-
-    fn counter_at_max(counter: usize, max_repeat: &Option<usize>) -> bool {
+    fn counter_at_max(&self, counter: usize, max_repeat: &Option<usize>) -> bool {
         match max_repeat {
             Some(value) => &counter == value,
             None => false
         }
+    }
+
+    /// Returns if this Regex, defined by its type, matches the given StringPointer.
+    fn own_regex_matches(&self, string_pointer: &mut StringPointer) -> Result<bool, StringPointerError> {
+        self.regex_type.matches_string(string_pointer)
+    }
+
+    /// Returns if the following Regex of this one matches the given StringPointer.
+    /// If no following Regex is set, the StringPointer must have reached its end.
+    fn next_regex_matches(&self, string_pointer: &mut StringPointer) -> Result<bool, StringPointerError> {
+        match &self.next {
+            Some(next_regex) => next_regex.matches_string(string_pointer),
+            None => Ok(string_pointer.at_the_end())
+        }
+    }
+}
+
+impl<'a> Display for Regex<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut regex_string = String::new();
+        regex_string.push_str(format!("Type: {} \n", self.regex_type).as_str());
+        regex_string.push_str(format!("Repeat: {}\n", match &self.repeat {
+            Some(repeat) => repeat.to_string(),
+            None => String::from("None")
+        }).as_str());
+        regex_string.push_str(format!("Next Regex: \n{}", match &self.next {
+            Some(next_regex) => next_regex.to_string(),
+            None => String::from("None")
+        }).as_str());
+
+        write!(f, "{}", regex_string)
     }
 }

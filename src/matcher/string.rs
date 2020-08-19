@@ -16,6 +16,7 @@ impl Str {
 
 impl Matcher for Str {
     fn matches(&self, mut string: String) -> bool {
+        println!("{}", format!("Matching: {}", string));
         string == self.string
     }
 

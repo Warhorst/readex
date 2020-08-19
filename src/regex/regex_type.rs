@@ -1,5 +1,7 @@
-use crate::string_pointer::StringPointer;
+use std::fmt::Display;
 
-pub trait RegexType {
-    fn matches_string(&self, string_pointer: &mut StringPointer) -> bool;
+use crate::string_pointer::{StringPointer, StringPointerError};
+
+pub trait RegexType: Display {
+    fn matches_string(&self, string_pointer: &mut StringPointer) -> Result<bool, StringPointerError>;
 }
